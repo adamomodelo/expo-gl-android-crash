@@ -1,50 +1,72 @@
-# Welcome to your Expo app 👋
+# expo-gl Android Crash Reproduction
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Minimal reproduction for expo-gl crash on Android.
 
-## Get started
+## Bug Summary
 
-1. Install dependencies
+`expo-gl` crashes with SIGSEGV on Android before `onContextCreate` is ever called. The crash occurs in native code (`ensurePrototypes`) with a null pointer dereference.
 
-   ```bash
-   npm install
-   ```
+## Environment
 
-2. Start the app
+- Expo SDK: 54.0.31
+- expo-gl: 16.0.9
+- Android: Tested on physical device and emulator
+- Architecture: Crashes on **both** New Architecture and Legacy Architecture
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Steps to Reproduce
 
 ```bash
-npm run reset-project
+npm install
+npx expo prebuild -p android --clean
+npx expo run:android
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Expected Behavior
 
-## Learn more
+Green screen should appear (GLView renders successfully).
 
-To learn more about developing your project with Expo, look at the following resources:
+## Actual Behavior
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+App crashes immediately with native SIGSEGV.
 
-## Join the community
+## Crash Log
 
-Join our community of developers creating universal apps.
+```
+Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid (mqt_js)
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Backtrace:
+#03 libexpo-gl.so (expo::gl_cpp::ensurePrototypes(facebook::jsi::Runtime&)+124)
+#04 libexpo-gl.so (createWebGLRenderer)
+#05 libexpo-gl.so (EXGLContext::prepareContext)
+```
+
+## Key Observations
+
+1. Crash happens **before** `onContextCreate` callback is invoked
+2. Crash occurs in `ensurePrototypes()` - null pointer dereference
+3. Happens with both `newArchEnabled: true` and `newArchEnabled: false`
+4. iOS works perfectly with the same code
+5. No third-party libraries involved - pure expo-gl
+
+## Minimal Code
+
+```tsx
+import { GLView } from 'expo-gl';
+import { View } from 'react-native';
+
+export default function App() {
+  return (
+    <View style={{ flex: 1 }}>
+      <GLView
+        style={{ flex: 1 }}
+        onContextCreate={(gl) => {
+          gl.clearColor(0, 1, 0, 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.flush();
+          gl.endFrameEXP();
+        }}
+      />
+    </View>
+  );
+}
+```
